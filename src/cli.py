@@ -15,7 +15,7 @@ from src.verify import verify_sha256
 
 from src.config import load_config, ConfigError
 
-from src.manifest import create_manifest, write_manifest
+from src.manifest import create_manifest, write_manifest, read_manifest_from_tar, validate_manifest, ManifestError, UnsupportedManifestVersion
 
 def resolve_output_path(output: Path, zsuffix: str) -> Path:
     if output.exists() and output.is_dir():
@@ -52,7 +52,6 @@ def cli():
     "--level",
     "-l",
     type=click.IntRange(0, 22),
-    default=3,
     help="Level to be used for the zstd algorithm"
 )
 @click.option(
@@ -196,11 +195,21 @@ def restore(backup, output, no_checksum, force, config_file):
     tar_path = None
     try:
         tar_path = decompress_zstd(backup)
+        
+        click.echo("Reading manifest...")
+        manifest = read_manifest_from_tar(tar_path)
+        validate_manifest(manifest)
+
         click.echo("Extracting files...")
         if not force and any(output.iterdir()):
             raise click.UsageError(f"Output directory is not empty {output} (use --force)")
         
         extract_tar(tar_path, output)
+
+    except UnsupportedManifestVersion as e:
+        raise click.ClickException(str(e))
+    except ManifestError as e:
+        raise click.ClickException(f"Invalid backup manifest: {e}")
 
     finally:
         if tar_path and tar_path.exists():
