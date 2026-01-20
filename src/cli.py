@@ -15,9 +15,24 @@ from src.verify import verify_sha256
 
 from src.config import load_config, ConfigError
 
-from src.manifest import create_manifest, write_manifest, read_manifest_from_tar, validate_manifest, ManifestError, UnsupportedManifestVersion
+from src.manifest import (
+    create_manifest,
+    write_manifest,
+    read_manifest_from_tar,
+    validate_manifest,
+    ManifestError,
+    UnsupportedManifestVersion
+)
 
 def resolve_output_path(output: Path, zsuffix: str) -> Path:
+    """ 
+        Resolve the final output path for the backup archive
+        
+        Behavior:
+        - If output is an existing directory, genereate a timestamp filename.
+        - If output ends with the expected suffix, use it as-is.
+        - If output is a filename without suffix, append the suffix.
+    """
     if output.exists() and output.is_dir():
             base = f"backup-{datetime.now():%Y%m%d_%H%M%S}"
             return output / f"{base}{zsuffix}"
@@ -77,6 +92,8 @@ def create(sources, output, level, rclone, force, config_file):
         except ConfigError as e:
             raise click.ClickException(str(e))
 
+    # When --file is provided, options passed via cli
+    # will override
     if not sources:
         sources = tuple(Path(p) for p in config.get("sources", []))
 
@@ -121,7 +138,7 @@ def create(sources, output, level, rclone, force, config_file):
             manifest_path.unlink()
 
         if temp_dir.exists():
-            temp_dir.rmdir()
+            shutil.rmtree(temp_dir, ignore_errors=True)
     
     shutil.move(zst_path, final_path)
     
@@ -162,13 +179,14 @@ def create(sources, output, level, rclone, force, config_file):
     help="Load configuration from a JSON file"
 )
 def restore(backup, output, no_checksum, force, config_file):
-    confoig = {}
+    config = {}
     if config_file:
         try:
             config = load_config(config_file).get("restore", {})
         except ConfigError as e:
             raise click.ClickException(str(e))
         
+    # With --file provided, cli options will override it
     if backup is None:
         backup_value = Path(config.get("backup"))
         if not backup_value:
@@ -186,11 +204,14 @@ def restore(backup, output, no_checksum, force, config_file):
     
     output.mkdir(parents=True, exist_ok=True)
     
+    # Checksum is verified before decompression to avoid
+    # unecessary load, but there is a check agains manifest
+    # later on, for now, just a redundancy
     if not no_checksum:
         click.echo("Verifying checksum...")
         if not verify_sha256(backup):
             raise click.ClickException("Checksum verification failed")
-        
+
     click.echo("Decompressing backup...")
     tar_path = None
     try:
@@ -199,6 +220,21 @@ def restore(backup, output, no_checksum, force, config_file):
         click.echo("Reading manifest...")
         manifest = read_manifest_from_tar(tar_path)
         validate_manifest(manifest)
+        
+        checksum_info = manifest.get("checksum", {})
+        algorithm = checksum_info.get("algorithm")
+        
+        if no_checksum:
+            click.echo("Checksum verification skipped by user")
+        else:
+            if algorithm != "sha256":
+                raise click.ClickException(f"Unsupported checksum algorithm: {algorithm}")
+        
+        sources = manifest.get("sources", [])
+        if sources:
+            click.echo("Backup contents:")
+            for src in sources:
+                click.echo(f" - {src['path']} ({src['type']})")
 
         click.echo("Extracting files...")
         if not force and any(output.iterdir()):
