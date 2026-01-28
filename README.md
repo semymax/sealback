@@ -70,7 +70,7 @@ python -m src.cli restore [OPTIONS] [BACKUP]
 Options:
   -o, --output PATH
   --no-checksum      Skip checksum verification
-  -f, --force        Overwrite files in destination if they exist
+  --force        Overwrite files in destination if they exist
   --file PATH        Load configuration from a JSON file
   --help             Show this message and exit.
 ```
