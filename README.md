@@ -1,24 +1,21 @@
-# Backup Tool
+# Sealback
 
-This is a simple backup tool written in Python, using `tar` for archiving,
-`zstandard` for compression, and optionally `rclone` to upload backups to a
+This is a ~~simple~~ backup tool written in Python, using `tar` for archiving, `zstandard` for compression, and optionally `rclone` to upload backups to a
 cloud provider.
 
 `rclone` must be installed and configured separately in order to be used.
-More information is available on the
-[rclone official website](https://rclone.org/).
+More information is available on the [rclone official website](https://rclone.org/).
 
 ---
 
 ## Features
 
 - Backups using `tar`
-- Compression using the Zstandard algorithm via the
-  [python-zstandard library](https://python-zstandard.readthedocs.io/en/stable/)
-- Command Line Interface (CLI) built with
-  [Click](https://click.palletsprojects.com/en/stable/)
+- Compression using the Zstandard algorithm via the   [python-zstandard library](https://python-zstandard.readthedocs.io/en/stable/)
+- Command Line Interface (CLI) built with   [Click](https://click.palletsprojects.com/en/stable/)
 - Optional upload to cloud storage using `rclone`
 - Load configuration from a JSON file
+- checks integrity and security using `cryptography`
 
 ---
 
@@ -51,27 +48,29 @@ This tool provides a CLI for creating and restoring backups.
 `create`:
 
 ```md
-python -m src.cli create [OPTIONS] [SOURCES]...
+Usage: python -m src.cli create [OPTIONS] [SOURCES]...
 
 Options:
   -o, --output PATH
-  -l, --level INTEGER RANGE  Level to be used for the zstd algorithm (0-22) (default: 3)
+  -l, --level INTEGER RANGE  Level to be used for the zstd algorithm
+                             [default: (3); 0<=x<=22]
   --rclone TEXT              Rclone destination (ex: remote:backups)
   --force                    Overwrite output file if it already exists
   --file PATH                Load configuration from a JSON file
+  --password TEXT            For encryption and integrity
   --help                     Show this message and exit.
 ```
 
 `restore`:
 
 ```md
-python -m src.cli restore [OPTIONS] [BACKUP]
+Usage: python -m src.cli restore [OPTIONS] [BACKUP]
 
 Options:
   -o, --output PATH
-  --no-checksum      Skip checksum verification
-  --force        Overwrite files in destination if they exist
+  -f, --force        Overwrite files in destination if they exist
   --file PATH        Load configuration from a JSON file
+  --password TEXT    For decryption and integrity check
   --help             Show this message and exit.
 ```
 
@@ -88,12 +87,12 @@ As of now, version 1 of the configuration file structure is used:
         "sources": [
             "/home/user/projects-example"
         ],
-        "output": "/home/user/backups/projects-example-backup.tar.zst",
+        "ouput": "/home/user/backups/projects-example-backup.seal",
         "level": 5,
         "rclone": "gdrive:backups"
     },
     "restore": {
-        "backup": "/home/user/backups/projects-example-backup.tar.zst",
+        "backup": "/home/user/backups/projects-example-backup.seal",
         "output": "/home/user/restore",
         "checksum": true
     }
@@ -110,7 +109,7 @@ in this case, this is the same as:
 
 ```bash
 python -m src.cli create /home/user/projects-example \
-  -o /home/user/backups/projects-example-backup.tar.zst \
+  -o /home/user/backups/projects-example-backup.seal \
   -l 5 --rclone gdrive:backups
 ```
 
@@ -123,7 +122,7 @@ python -m src.cli restore --file ./example-config-file.json
 is the same as:
 
 ```bash
-python -m src.cli restore /home/user/backups/projects-example-backup.tar.zst \
+python -m src.cli restore /home/user/backups/projects-example-backup.seal \
   -o /home/user/restore
 ```
 
@@ -132,9 +131,7 @@ python -m src.cli restore /home/user/backups/projects-example-backup.tar.zst \
 When creating a backup:
 
 - At least one source path must be provided.
-
 - When `--rclone` is provided, the backup file is uploaded using the `rclone` CLI.
-
 - If the output path does not include a file extension `.tar.zst` will be appended automatically.
 
 In both cases:
@@ -148,7 +145,7 @@ Create a backup of `/home/user/projects` and store it in `/home/user/backups`:
 
 ```bash
 python -m src.cli create /home/user/projects \
-  -o /home/user/backups/projects-backup.tar.zst
+  -o /home/user/backups/projects-backup.seal
 ```
 
 Create a backup and upload it to a cloud remote:

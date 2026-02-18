@@ -6,7 +6,7 @@ import shutil
 
 from src.backup import create_tar
 from src.compress import compress_zstd
-from src.checksum import sha256
+# from src.checksum import sha256
 from src.upload import upload_rclone
 
 from src.decompress import decompress_zstd
@@ -14,6 +14,8 @@ from src.extract import safe_extract_tar, UnsafePathError
 from src.verify import verify_sha256
 
 from src.config import load_config, ConfigError
+
+from src.crypto.format import write_enc_file, read_enc_file, DecryptionError
 
 from src.manifest import (
     create_manifest,
@@ -67,7 +69,8 @@ def cli():
     "--level",
     "-l",
     type=click.IntRange(0, 22),
-    help="Level to be used for the zstd algorithm (default: 3)"
+    help="Level to be used for the zstd algorithm",
+    show_default="3"
 )
 @click.option(
     "--rclone",
@@ -84,7 +87,14 @@ def cli():
     type=click.Path(exists=True, path_type=Path),
     help="Load configuration from a JSON file"
 )
-def create(sources, output, level, rclone, force, config_file):
+@click.password_option(
+    "--password",
+    help="For encryption and integrity",
+)
+def create(sources, output, level, rclone, force, config_file, password):
+    if not password:
+        raise click.UsageError("Password cannot be empty")
+    
     config = {}
     if config_file:
         try:
@@ -108,7 +118,7 @@ def create(sources, output, level, rclone, force, config_file):
     if not sources:
         raise click.UsageError("No source provided")
 
-    zsuffix = ".tar.zst"
+    zsuffix = ".seal"
     
     final_path = resolve_output_path(output, zsuffix)
     if final_path.exists():
@@ -120,13 +130,19 @@ def create(sources, output, level, rclone, force, config_file):
 
     click.echo(f"Adding {len(sources)} source(s) to the backup file...")
     click.echo(f"Creating manifest...")
-    manifest = create_manifest(list(sources), "zstd", level, "backup-tool-python", click.get_current_context().command_path)
+    manifest = create_manifest(
+        list(sources),
+        "zstd",
+        level,
+        "sealback",
+        click.get_current_context().command_path
+    )
     temp_dir = Path(tempfile.mkdtemp())
     manifest_path = write_manifest(manifest, temp_dir)
 
     try:
         tar_path = create_tar(list(sources), [manifest_path])
-        click.echo("Compressing with zstd...")
+        click.echo("Compressing...")
         zst_path = compress_zstd(tar_path, level)
     except Exception:
         raise
@@ -140,14 +156,24 @@ def create(sources, output, level, rclone, force, config_file):
         if temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
     
-    shutil.move(zst_path, final_path)
+    click.echo("Encrypting file...")
+    try:
+        encrypted_file = write_enc_file(
+            zst_path,
+            final_path,
+            password,
+        )
+    except Exception:
+        raise
     
-    click.echo("Generating checksum...")
-    sha256(final_path)
+    # shutil.move(zst_path, final_path)
+    
+    # click.echo("Generating checksum...")
+    # sha256(final_path)
 
     if rclone:
         click.echo(f"Uploading to {rclone}")
-        upload_rclone(final_path, rclone)
+        upload_rclone(encrypted_file, rclone)
         
 @cli.command()
 @click.argument(
@@ -161,11 +187,11 @@ def create(sources, output, level, rclone, force, config_file):
     type=click.Path(path_type=Path),
     default="."
 )
-@click.option(
-    "--no-checksum",
-    is_flag=True,
-    help="Skip checksum verification"
-)
+# @click.option(
+#     "--no-checksum",
+#     is_flag=True,
+#     help="Skip checksum verification"
+# )
 @click.option(
     "-f",
     "--force",
@@ -178,7 +204,11 @@ def create(sources, output, level, rclone, force, config_file):
     type=click.Path(exists=True, path_type=Path),
     help="Load configuration from a JSON file"
 )
-def restore(backup, output, no_checksum, force, config_file):
+@click.password_option(
+    "--password",
+    help="For decryption and integrity check"
+)
+def restore(backup, output, force, config_file, password):
     config = {}
     if config_file:
         try:
@@ -197,39 +227,53 @@ def restore(backup, output, no_checksum, force, config_file):
     
     output = output if output != Path(".") else Path(config.get("output", "."))
     
-    if not no_checksum:
-        no_checksum = not config.get("checksum", True)
+    # if not no_checksum:
+        # no_checksum = not config.get("checksum", True)
     
-    if backup.suffixes[-2:] != [".tar", ".zst"]:
-        raise click.UsageError("Backup must be a .tar.zst file")
+    if backup.suffix != ".seal":
+        raise click.UsageError("Backup must be a .seal file")
     
     output.mkdir(parents=True, exist_ok=True)
     
     # Checksum is verified before decompression to avoid
     # unecessary load, but there is a check agains manifest
     # later on, for now, just a redundancy
-    if not no_checksum:
-        click.echo("Verifying checksum...")
-        if not verify_sha256(backup):
-            raise click.ClickException("Checksum verification failed")
+    # if not no_checksum:
+    #     click.echo("Verifying checksum...")
+    #     if not verify_sha256(backup):
+    #         raise click.ClickException("Checksum verification failed")
 
+    # header = create_header()
+
+    try:
+        click.echo("Decrypting file...")
+        temp_dir = Path(tempfile.mkdtemp())
+        decrypted_path = read_enc_file(
+            backup,
+            temp_dir,
+            password
+        )
+    except:
+        raise
+    
     click.echo("Decompressing backup...")
+    # decrypted_path = None
     tar_path = None
     try:
-        tar_path = decompress_zstd(backup)
+        tar_path = decompress_zstd(decrypted_path)
         
         click.echo("Reading manifest...")
         manifest = read_manifest_from_tar(tar_path)
         validate_manifest(manifest)
         
-        checksum_info = manifest.get("checksum", {})
-        algorithm = checksum_info.get("algorithm")
+        # checksum_info = manifest.get("checksum", {})
+        # algorithm = checksum_info.get("algorithm")
         
-        if no_checksum:
-            click.echo("Checksum verification skipped by user")
-        else:
-            if algorithm != "sha256":
-                raise click.ClickException(f"Unsupported checksum algorithm: {algorithm}")
+        # if no_checksum:
+        #     click.echo("Checksum verification skipped by user")
+        # else:
+        #     if algorithm != "sha256":
+        #         raise click.ClickException(f"Unsupported checksum algorithm: {algorithm}")
         
         sources = manifest.get("sources", [])
         if sources:

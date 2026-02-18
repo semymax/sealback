@@ -1,0 +1,1 @@
+MAGIC = b"SBF\x01\x00\x00\x00\x00"

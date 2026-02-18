@@ -1,16 +1,14 @@
 {
-    "version": 1,
-    "create": {
-        "sources": [
-            "/home/user/projects-example"
-        ],
-        "ouput": "/home/user/backups/projects-example-backup.tar.zst",
-        "level": 5,
-        "rclone": "gdrive:backups"
-    },
-    "restore": {
-        "backup": "/home/user/backups/projects-example-backup.tar.zst",
-        "output": "/home/user/restore",
-        "checksum": true
-    }
+  "version": 1,
+  "create": {
+    "sources": ["/home/user/projects-example"],
+    "ouput": "/home/user/backups/projects-example-backup.seal",
+    "level": 5,
+    "rclone": "gdrive:backups"
+  },
+  "restore": {
+    "backup": "/home/user/backups/projects-example-backup.seal",
+    "output": "/home/user/restore",
+    "checksum": true
+  }
 }
