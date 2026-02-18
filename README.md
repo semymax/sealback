@@ -132,7 +132,7 @@ When creating a backup:
 
 - At least one source path must be provided.
 - When `--rclone` is provided, the backup file is uploaded using the `rclone` CLI.
-- If the output path does not include a file extension `.tar.zst` will be appended automatically.
+- ~~If the output path does not include a file extension `.tar.zst` will be appended automatically.~~ The project now uses its own format (`.seal`)
 
 In both cases:
 
