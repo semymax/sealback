@@ -25,6 +25,7 @@ This project depends on the following external libraries:
 
 - `zstandard`
 - `click`
+- `cryptography`
 
 ### Virtual environment setup
 
@@ -93,8 +94,7 @@ As of now, version 1 of the configuration file structure is used:
     },
     "restore": {
         "backup": "/home/user/backups/projects-example-backup.seal",
-        "output": "/home/user/restore",
-        "checksum": true
+        "output": "/home/user/restore"
     }
 }
 ```
@@ -132,7 +132,7 @@ When creating a backup:
 
 - At least one source path must be provided.
 - When `--rclone` is provided, the backup file is uploaded using the `rclone` CLI.
-- ~~If the output path does not include a file extension `.tar.zst` will be appended automatically.~~ The project now uses its own format (`.seal`)
+- ~~If the output path does not include a file extension `.tar.zst` will be appended automatically.~~ Since the implementation of the header as a info container the project uses its own format (`.seal`).
 
 In both cases:
 
@@ -160,4 +160,11 @@ Create a backup using a JSON file:
 
 ```bash
 python -m src.cli create --file /home/user/projects/backup-projects-config.json
+```
+
+As of now the use of password is mandatory, the app will prompt you to enter a password, but you can pass it explicitly using the `--password` option.
+Example:
+
+```bash
+python -m src.cli create --file /home/user/projects/backup-projects-config.json --password "yourPasswordHere"
 ```
